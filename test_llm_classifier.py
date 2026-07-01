@@ -4,8 +4,8 @@ Manual verification tests for llm_classifier().
 Run with:  pytest test_llm_classifier.py -v -s
 
 Expected score ranges are based on planning.md confidence thresholds:
-  0.00–0.39  → high_confidence_human
-  0.40–0.69  → uncertain
+  0.00–0.30  → high_confidence_human
+  0.31–0.69  → uncertain
   0.70–1.00  → high_confidence_AI
 """
 

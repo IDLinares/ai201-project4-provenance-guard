@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta http-equiv="Cache-Control" content="no-store" />
+		<title>Provenance Guard</title>
+		<style>
+			body {
+				font-family: sans-serif;
+				max-width: 860px;
+				margin: 40px auto;
+				padding: 0 24px;
+				color: #222;
+			}
+			h1 {
+				margin-bottom: 4px;
+			}
+			h2 {
+				margin-top: 32px;
+				margin-bottom: 8px;
+			}
+			h3 {
+				margin-top: 0;
+			}
+			label {
+				display: block;
+				font-weight: bold;
+				margin-top: 12px;
+				margin-bottom: 4px;
+			}
+			label span {
+				font-weight: normal;
+				color: #555;
+			}
+			textarea,
+			input[type='text'] {
+				width: 100%;
+				box-sizing: border-box;
+				padding: 8px;
+				font-size: 0.95em;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+			}
+			button {
+				padding: 8px 18px;
+				margin-top: 10px;
+				margin-right: 6px;
+				cursor: pointer;
+				border: 1px solid #999;
+				border-radius: 4px;
+				background: #f0f0f0;
+				font-size: 0.95em;
+			}
+			button:hover {
+				background: #ddd;
+			}
+			hr {
+				margin: 36px 0;
+				border: none;
+				border-top: 1px solid #ddd;
+			}
+			.result-box {
+				display: none;
+				margin-top: 12px;
+				padding: 12px 14px;
+				background: #f7f9f7;
+				border: 1px solid #bcd;
+				border-radius: 4px;
+				white-space: pre-wrap;
+				font-family: monospace;
+				font-size: 0.9em;
+			}
+			.result-box.error {
+				background: #fff5f5;
+				border-color: #f5c0c0;
+				color: #900;
+			}
+			.table-section {
+				display: none;
+				margin-top: 20px;
+				overflow-x: auto;
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 0.85em;
+			}
+			th {
+				background: #f0f0f0;
+				text-align: left;
+				padding: 8px;
+				border: 1px solid #ddd;
+			}
+			td {
+				padding: 7px 8px;
+				border: 1px solid #ddd;
+				vertical-align: top;
+				word-break: break-all;
+			}
+			td.reasoning {
+				word-break: break-word;
+				max-width: 200px;
+			}
+			.badge {
+				padding: 2px 7px;
+				border-radius: 10px;
+				font-size: 0.85em;
+				white-space: nowrap;
+			}
+			.badge-ai {
+				background: #fde8e8;
+				color: #900;
+			}
+			.badge-human {
+				background: #e6f4ea;
+				color: #2d6a2d;
+			}
+			.badge-uncertain {
+				background: #fff3cd;
+				color: #7a6000;
+			}
+			.badge-review {
+				background: #e8f0fe;
+				color: #1a56a0;
+			}
+			.empty-msg {
+				color: #888;
+				padding: 10px 0;
+			}
+			.subtitle {
+				color: #555;
+				margin-top: 4px;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Provenance Guard</h1>
+		<p class="subtitle">AI content classification &amp; appeals system</p>
+
+		<!-- ── Submit ──────────────────────────────────────── -->
+		<h2>Test your text here</h2>
+
+		<label for="submit-text">Content <span>(required)</span></label>
+		<textarea id="submit-text" rows="8" placeholder="Paste the text you want to classify…"></textarea>
+
+		<label for="submit-creator">Creator ID <span>(required)</span></label>
+		<input type="text" id="submit-creator" placeholder="e.g. your_username" />
+
+		<button type="button" onclick="submitContent()">Submit</button>
+
+		<div id="submit-result" class="result-box"></div>
+
+		<hr />
+
+		<!-- ── Appeal ─────────────────────────────────────── -->
+		<h2>Appeal content here</h2>
+
+		<label for="appeal-content-id">Content ID <span>(required — from a submission above)</span></label>
+		<input type="text" id="appeal-content-id" placeholder="e.g. 3f9a1c2d-…" />
+
+		<label for="appeal-creator">Creator ID <span>(optional — leave blank to appeal anonymously)</span></label>
+		<input type="text" id="appeal-creator" placeholder="e.g. your_username" />
+
+		<label for="appeal-reasoning">Reasoning <span>(required)</span></label>
+		<textarea id="appeal-reasoning" rows="4" placeholder="Explain why you believe this content was misclassified…"></textarea>
+
+		<button type="button" onclick="submitAppeal()">Submit Appeal</button>
+
+		<div id="appeal-result" class="result-box"></div>
+
+		<hr />
+
+		<!-- ── Tables ─────────────────────────────────────── -->
+		<button type="button" onclick="toggleTable('submissions')">View Submissions</button>
+		<button type="button" onclick="toggleTable('logs')">Audit Logs</button>
+
+		<!-- Submissions table -->
+		<div id="submissions-section" class="table-section">
+			<h3>Submissions</h3>
+			<div id="submissions-body-wrap">
+				<table>
+					<thead>
+						<tr>
+							<th>Content ID</th>
+							<th>Creator ID</th>
+							<th>Timestamp</th>
+							<th>Attribution</th>
+							<th>Confidence</th>
+							<th>Label</th>
+							<th>Status</th>
+						</tr>
+					</thead>
+					<tbody id="submissions-body"></tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Audit Logs table -->
+		<div id="logs-section" class="table-section">
+			<h3>Audit Logs</h3>
+			<div id="logs-body-wrap">
+				<table>
+					<thead>
+						<tr>
+							<th>Content ID</th>
+							<th>Creator ID</th>
+							<th>Timestamp</th>
+							<th>Attribution</th>
+							<th>Confidence</th>
+							<th>LLM Score</th>
+							<th>Heuristic Score</th>
+							<th>Status</th>
+							<th>Reasoning</th>
+						</tr>
+					</thead>
+					<tbody id="logs-body"></tbody>
+				</table>
+			</div>
+		</div>
+
+		<script>
+			const LABELS = {
+				high_confidence_human: 'Most likely authentic 👍🏾',
+				uncertain: 'Cannot determine authenticity ❓',
+				high_confidence_AI: 'Most likely AI 🤖',
+			};
+
+			const BADGE_CLASS = {
+				high_confidence_human: 'badge-human',
+				uncertain: 'badge-uncertain',
+				high_confidence_AI: 'badge-ai',
+				under_review: 'badge-review',
+				not_appealed: '',
+				approved: 'badge-human',
+				denied: 'badge-ai',
+			};
+
+			function badge(value) {
+				const cls = BADGE_CLASS[value] || '';
+				return cls ? `<span class="badge ${cls}">${value}</span>` : value;
+			}
+
+			function showResult(box, data, isError) {
+				box.style.display = 'block';
+				box.className = 'result-box' + (isError ? ' error' : '');
+				box.textContent = JSON.stringify(data, null, 2);
+			}
+
+			async function submitContent() {
+				const text = document.getElementById('submit-text').value.trim();
+				const creatorId = document.getElementById('submit-creator').value.trim();
+				const resultBox = document.getElementById('submit-result');
+
+				if (!text || !creatorId) {
+					showResult(resultBox, { error: 'Content and Creator ID are both required.' }, true);
+					return;
+				}
+
+				try {
+					const res = await fetch('/submit', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ text, creator_id: creatorId }),
+					});
+					const data = await res.json();
+					showResult(resultBox, data, !res.ok);
+					if (res.ok) {
+						document.getElementById('submit-text').value = '';
+						document.getElementById('submit-creator').value = '';
+					}
+				} catch (e) {
+					showResult(resultBox, { error: 'Request failed: ' + e.message }, true);
+				}
+			}
+
+			async function submitAppeal() {
+				const contentId = document.getElementById('appeal-content-id').value.trim();
+				const creatorId = document.getElementById('appeal-creator').value.trim();
+				const reasoning = document.getElementById('appeal-reasoning').value.trim();
+				const resultBox = document.getElementById('appeal-result');
+
+				if (!contentId || !reasoning) {
+					showResult(resultBox, { error: 'Content ID and Reasoning are required.' }, true);
+					return;
+				}
+
+				const body = { content_id: contentId, reasoning };
+				if (creatorId) body.creator_id = creatorId;
+
+				try {
+					const res = await fetch('/appeal', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(body),
+					});
+					const data = await res.json();
+					showResult(resultBox, data, !res.ok);
+					if (res.ok) {
+						document.getElementById('appeal-content-id').value = '';
+						document.getElementById('appeal-creator').value = '';
+						document.getElementById('appeal-reasoning').value = '';
+					}
+				} catch (e) {
+					showResult(resultBox, { error: 'Request failed: ' + e.message }, true);
+				}
+			}
+
+			async function toggleTable(type) {
+				const section = document.getElementById(type + '-section');
+				const isVisible = section.style.display === 'block';
+
+				document.getElementById('submissions-section').style.display = 'none';
+				document.getElementById('logs-section').style.display = 'none';
+
+				if (isVisible) return;
+
+				let entries;
+				try {
+					const res = await fetch('/logs', { cache: 'no-store' });
+					if (!res.ok) { alert('Failed to load logs: HTTP ' + res.status); return; }
+					entries = await res.json();
+				} catch (e) {
+					alert('Failed to load logs: ' + e.message);
+					return;
+				}
+
+				if (!Array.isArray(entries) || entries.length === 0) {
+					const colspan = type === 'submissions' ? 7 : 9;
+					const id = type === 'submissions' ? 'submissions-body' : 'logs-body';
+					document.getElementById(id).innerHTML =
+						`<tr><td colspan="${colspan}" class="empty-msg">No entries yet.</td></tr>`;
+					section.style.display = 'block';
+					return;
+				}
+
+				if (type === 'submissions') {
+					// One row per content_id: keep the entry with the latest timestamp.
+					const contentMap = {};
+					entries.forEach(function(e) {
+						var existing = contentMap[e.content_id];
+						if (!existing || e.timestamp > existing.timestamp) {
+							contentMap[e.content_id] = e;
+						}
+					});
+					var rows = Object.values(contentMap);
+					document.getElementById('submissions-body').innerHTML = rows.map(function(e) {
+						return '<tr>'
+							+ '<td>' + e.content_id + '</td>'
+							+ '<td>' + e.creator_id + '</td>'
+							+ '<td>' + e.timestamp + '</td>'
+							+ '<td>' + badge(e.attribution) + '</td>'
+							+ '<td>' + e.confidence + '</td>'
+							+ '<td>' + (LABELS[e.attribution] || e.attribution) + '</td>'
+							+ '<td>' + badge(e.status) + '</td>'
+							+ '</tr>';
+					}).join('');
+				} else {
+					document.getElementById('logs-body').innerHTML = entries.map(function(e) {
+						return '<tr>'
+							+ '<td>' + e.content_id + '</td>'
+							+ '<td>' + e.creator_id + '</td>'
+							+ '<td>' + e.timestamp + '</td>'
+							+ '<td>' + badge(e.attribution) + '</td>'
+							+ '<td>' + e.confidence + '</td>'
+							+ '<td>' + (e.llm_score != null ? e.llm_score : '—') + '</td>'
+							+ '<td>' + (e.heuristic_score != null ? e.heuristic_score : '—') + '</td>'
+							+ '<td>' + badge(e.status) + '</td>'
+							+ '<td class="reasoning">' + (e.reasoning || '—') + '</td>'
+							+ '</tr>';
+					}).join('');
+				}
+
+				section.style.display = 'block';
+			}
+		</script>
+	</body>
+</html>

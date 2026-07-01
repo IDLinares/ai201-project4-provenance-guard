@@ -1,5 +1,5 @@
 import uuid
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from classifiers import (
@@ -24,7 +24,7 @@ _CREATOR_REQUIRED_ATTRIBUTIONS = {"uncertain", "high_confidence_AI"}
 
 @app.route("/")
 def home():
-    return "Provenance Guard is running."
+    return render_template("index.html")
 
 
 @app.route("/submit", methods=["POST"])

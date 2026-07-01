@@ -148,26 +148,41 @@ Groq - `llama-3.3-70b-versatile` (Free tier)
 It measures semantic and stylistic coherence holistically.
 
 **What the output looks like**
-I will have the LLM return a strctured JSON with a confidence score and reasoning as follows:
+Rather than asking the LLM to jump straight to a number, the prompt forces a procedure: extract evidence for both human and AI authorship, construct the strongest counter-argument against its own leaning, classify how one-sided the evidence is, then pick a score bounded by that classification. This replaced an earlier version that asked for a direct holistic score — that version required constant checklist patches as new topics/genres surfaced patterns not on the list (a form of overfitting to the specific texts it had been tuned against) and it was systematically overconfident, since nothing forced the model to seriously weigh the opposing side before committing to a number.
+
+The LLM returns a structured JSON as follows:
 
 ```JSON
     {
+        "human_evidence": ["<short factual observation>", ...],
+        "ai_evidence": ["<short factual observation>", ...],
+        "counterargument": "<the single strongest argument against the model's leaning>",
+        "evidence_balance": "<one_sided_ai|leans_ai|mixed|leans_human|one_sided_human>",
         "confidence_score": "(num) <0-1>",
-        "reasoning": "<Short explanation of why it gave the score it did>"
+        "reasoning": "<Short explanation of the deciding factor>"
     }
 ```
 
-- "confidence_score": A score between 0 and 1 evaluating how likely the LLM thinks the text is AI-generated with 1 being absolutely certain it is AI-generated and 0 being absolutely certain it is not AI-generated
-- "reasoning": A short text description for why the LLM gave the score it did
+- "human_evidence" / "ai_evidence": Concrete observations extracted from the text supporting each side, gathered before any score is picked
+- "counterargument": Forces the model to argue against its own leaning before committing to a verdict; if no credible counter-argument exists, that absence is itself treated as a signal of one-sidedness
+- "evidence_balance": A categorical verdict (one_sided_ai, leans_ai, mixed, leans_human, one_sided_human) chosen before the numeric score
+- "confidence_score": A score between 0 and 1, constrained to a band determined by "evidence_balance" (e.g. "mixed" → 0.40–0.64) so the number reflects a real classification rather than an arbitrary pick
+- "reasoning": A short text description of the deciding factor
+
+Only "confidence_score" and "reasoning" are consumed downstream (`app.py`); the other fields exist to structure the model's reasoning process and are not currently persisted to the audit log.
 
 **Differences between AI and Human**
 
-- Semantic coherence: AI text is consistent with very structured logical arguments, while humans tend to make more logical leaps or pivots in thought process.
-- Stylistic Homogenity: AI text tends to use hedging language and stays overly polished in ways humans rarely use in casual or academic settings.
-- Pragmatics: AI tends to hallucinate and state things with absolute confidence that is not possible or logically sound.
+The system prompt treats these as non-exhaustive guidance for evidence-gathering, not a checklist to pattern-match against, since new topics keep surfacing new phrasings of the same underlying tells:
+
+- Stylistic homogeneity: Uniformly polished tone, hedging/connective filler, little variance in rhythm.
+- Structural symmetry: Near-equal-length parallel sections covering multiple sub-topics, often opening with a thesis and closing with a restatement of it (the "essay outline" shape) — found to be a real AI tell distinct from sentence-level phrasing (e.g. a Gemini response comparing three presidential administrations in three symmetric paragraphs, bookended by a restated thesis).
+- Didactic/assistant framing: Writing AS an assistant answering a reader — direct verdicts, defining terms for the reader, scaffolding that announces its own structure. A strong AI tell even when the content is specific and substantive.
+- Natural variance (human signal): Logical leaps, backtracking, authentic shifts in thought, specific lived detail, genuine personal voice.
+- Register is not content (human signal, with an override): Formal/academic/technical register alone is NOT evidence of AI — dense, source-grounded content written as authored prose for the record leans human even when polished, UNLESS it also shows structural symmetry or didactic framing, which override register.
 
 **What it misses**
-While the LLM understands semantic context, it does not provide the mathematical precision to detect specific structural anomalies. It can be fooled by the framing of the text, such as by adding typos, colloquialisms, or personal anecdotes.
+While the LLM understands semantic context, it does not provide the mathematical precision to detect specific structural anomalies. Provenance can be deliberately masked (AI told to add typos/anecdotes, or human text heavily AI-polished), and such text may be genuinely indistinguishable from its disguise — the prompt treats that as a reason to land in "mixed" rather than guess, but a well-disguised case can still land human-leaning (an accepted, documented limitation rather than something to keep chasing).
 
 ### Stylometric Heuristics - Structural signal
 
@@ -189,19 +204,19 @@ I will have my function return a JSON with an overall confidence score, burstine
     "confidence_score": "<0-1>",
     "burstiness_score": "<stddev of sentence lengths>",
     "diversity_score": "<0-1, type-token ratio>",
-    "punctuation_density": "<0-1, punctuation chars / total chars>"
+    "punctuation_density": "<0-1, density of em dashes/semicolons per word, scaled>"
 }
 ```
 
 - "confidence_score": A score between 0 and 1 evaluating how confident that classifier is that the whole text is AI-generated with 1 being 100% certain
-- "burstiness_score": A score measuring the standard deviation of sentence lengths with scores closer to 0 meaning every sentence is roughly the same length (more likely AI generated)
+- "burstiness_score": A score measuring the standard deviation of sentence lengths with scores closer to 0 meaning every sentence is roughly the same length (more likely AI generated). Sentence splitting protects initialisms and common abbreviations (U.S., Dr., vs.) from being mistaken for sentence boundaries — without this, "U.S." fragments into garbage 1-word "sentences" that inflate the stddev and bias the score away from AI.
 - "diversity_score": A score between 0 and 1 measuring the richness of the vocabulary (lower scores tend to lean AI generated because of repetitive and safe vocabulary; len(set(tokens)) / len(tokens))
-- "punctuation_density": A score between 0 and 1 representing the frequency of punctuation marks relative to the length of the text (AI tends to have higher punctuation density)
+- "punctuation_density": A score between 0 and 1 measuring the density of em dashes and semicolons specifically (marks disproportionately overused by LLMs), not punctuation overall. Overall punctuation density (periods/commas) sits at a near-constant ~0.02 regardless of authorship and carries no signal, which was wasting this metric's weight in the combined score. Density is computed as (count of em dashes + semicolons) / word count, scaled so ~1 per 15 words reaches the 1.0 ceiling.
 
 **How the confidence score is calculated**
 Each metric is first normalized to a 0–1 scale where the closer to 1 = more likely AI:
 
-- burstiness_contribution = 1 - min(burstiness_score / 20.0, 1.0): low variance in sentence length signals AI; the raw stddev is capped at 20 words as a practical ceiling before inverting
+- burstiness_contribution = 1 - min(burstiness_score / 20.0, 1.0): low variance in sentence length signals AI; the raw stddev is capped at 20 words as a practical ceiling before inverting. Note: burstiness is a weak structural separator — human and AI prose both tend to fall in the ~5–10 stddev band, so this signal alone cannot reliably distinguish them. A lower cap (e.g. 9) was tried but only shifted every score downward toward "human" rather than improving separation, so the cap stays at 20
 - diversity_contribution = 1 - diversity_score: low vocabulary diversity signals AI; TTR is already 0–1 so just invert it
 - punctuation_contribution = punctuation_density: higher punctuation density signals AI; already 0–1, no inversion needed
   Then the weighted average:
@@ -212,6 +227,7 @@ confidence_score = (0.50 × burstiness_contribution) + (0.35 × diversity_contri
 
 - Burstiness: Sentence length and structure tends to be much more uniform when AI generated. Human writing tends to have a mix of short, punchy sentences wiht long, complex ones.
 - Diversity: Vocabulary richness tends to be much safer and more repetitive when AI generated compared to the unpredictability of human writing.
+- Punctuation: AI-generated text tends to overuse em dash and has very uniform and perfect punctuation usage, while human writing has natural inconsistencies and intentional hesitations.
 
 **What it misses**
 Since this is strictly structural, it cannot capture nuance such as context, intent, and meaning that aids in determining the likelihood of a text being human-generated or not.
@@ -230,10 +246,10 @@ For this dual signal setup I will use a dynamic weighted average to combine the 
 
 ### Combined Confidence Score Thresholds
 
-**0-0.39**
+**0-0.30**
 Fairly confident that the text is not AI-generated.
 
-**0.4-0.69**
+**0.31-0.69**
 Unsure whether the text is AI-generated or not
 
 **0.7-1.0**
@@ -243,12 +259,12 @@ Fairly confident that the text is AI-generated.
 
 ## Transparency Label Design
 
-### 0-0.39 Label
+### 0-0.30 Label
 
 The system returns to the user "Most likely authentic 👍🏾"
 Attribution: "high_confidence_human"
 
-### 0.4-0.69 Label
+### 0.31-0.69 Label
 
 The system returns to the user "Cannot determine authenticity ❓"
 Attribution: "uncertain"
