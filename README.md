@@ -236,6 +236,8 @@ My spec was very thorough, so I had a very clear understanding of how data flowe
 
 Initially, I planned on including a Perplexity as a metric underneath the heuristics, but upon further research, I realized I would need more than just standard Python functions for that as it compares text against a language model's probability distribution. As such, that would not make sense to add under heuristics using pure Python and I removed that metric from the calculation.
 
+---
+
 ## AI Usage
 
 ### Instance 1
@@ -261,3 +263,10 @@ Initially, I planned on including a Perplexity as a metric underneath the heuris
 **What it produced:** Claude successfully implemented the `appeals` endpoint and adding the transparency label generation to the end of the classification pipeline.
 
 **What I changed or overrode:** It initially was going to require a creator_id for all appeals, but I pivoted and decided to specify that creator_id is only required for uncertain or AI-generated statuses appeals since it makes most sense that the only person who could argue why a post is not AI would be the person who actually submitted it. So I added conditionals to how the appeals endpoint is done.
+
+---
+
+## Project Demo Video
+
+https://drive.google.com/file/d/1sXpVMAnH9Wkoe0H06UAW5DYOZIfYHLfx/view?usp=drive_link
+
